@@ -2,8 +2,8 @@ package netmagis
 
 import (
 	"fmt"
-	//"io/ioutil"
 	"golang.org/x/net/html"
+	"io/ioutil"
 	"net"
 	"net/url"
 	//"github.com/lucasuyezu/golang-cas-client"
@@ -13,6 +13,7 @@ import (
 	"strings"
 	//"time"
 	"github.com/antchfx/htmlquery"
+	"gopkg.in/yaml.v2"
 )
 
 var (
@@ -35,6 +36,42 @@ type NetmagisClient struct {
 	//Username   string
 	//Password   string
 	HttpClient *HttpClient
+}
+
+type YamlConfig struct {
+	Netmagis struct {
+		Url      string `yaml:"url"`
+		Username string `yaml:"username"`
+		Password string `yaml:"password"`
+	}
+}
+
+func FromConfig(filepath string) (*NetmagisClient, error) {
+	config := YamlConfig{}
+
+	fileContent, err := ioutil.ReadFile(filepath)
+	if err != nil {
+		return nil, &NetmagisError{
+			fmt.Sprintf(
+				"unable to load YAML file: %s",
+				err.Error(),
+			),
+		}
+	}
+
+	err = yaml.Unmarshal(fileContent, &config)
+	if err != nil {
+		return nil, &NetmagisError{
+			fmt.Sprintf(
+				"unable to parse YAML content: %s",
+				err.Error(),
+			),
+		}
+	}
+
+	return NewClient(
+		config.Netmagis.Url, config.Netmagis.Username, config.Netmagis.Password,
+	)
 }
 
 //
