@@ -2,19 +2,15 @@ package netmagis
 
 import (
 	"fmt"
+	"github.com/antchfx/htmlquery"
 	"golang.org/x/net/html"
+	"gopkg.in/yaml.v2"
 	"io/ioutil"
 	"net"
 	"net/url"
-	//"github.com/lucasuyezu/golang-cas-client"
-	//"net/http"
-	//"net/http/cookiejar"
 	"regexp"
 	"strconv"
 	"strings"
-	//"time"
-	"github.com/antchfx/htmlquery"
-	"gopkg.in/yaml.v2"
 )
 
 var (
@@ -22,13 +18,6 @@ var (
 	hostNotFoundRegexp = regexp.MustCompile(`String '[^']*' not found`)
 
 /*
-	tdRegexp           = regexp.MustCompile(
-		//		`<td .*class="tab-text10">([^<]*)</td>`,
-		`<td .*class="tab-text10">(?!(</td>)*)</td>`,
-	)
-*/
-)
- /*
  * Utils
  */
 func try(mapInstance map[string]interface{}, key string, defaultValue interface{}) interface{} {
@@ -61,9 +50,7 @@ func splitFqdn(fqdn string) (string, string) {
  * Client
  */
 type NetmagisClient struct {
-	BaseUrl string
-	//Username   string
-	//Password   string
+	BaseUrl    string
 	HttpClient *HttpClient
 }
 
