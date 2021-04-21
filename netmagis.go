@@ -312,6 +312,28 @@ func (c *NetmagisClient) AddAlias(cname string, data string) error {
 	return nil
 }
 
-func (c *NetmagisClient) DelHost(alias string, view string) error {
-	return nil
+func (c *NetmagisClient) DelHost(fqdn string) error {
+	name, domain := splitFqdn(fqdn)
+	formData := url.Values{
+		"idviews": {"1"},
+		"name":    {name},
+		"domain":  {domain},
+	}
+	res, err := c.HttpClient.PostForm(c.JoinUrl("/del"), formData)
+	if err != nil {
+		return err
+	}
+	body, _ := c.HttpClient.ReadBody(res)
+
+	if strings.Contains(string(body), "<h2>Error!</h2>") {
+		errorMsg := strings.Trim(string(errorRegexp.FindSubmatch(body)[1]), `"`)
+		return &NetmagisError{errorMsg}
+	}
+
+	if strings.Contains(string(body), "has been removed") {
+		return nil
+	} else {
+		// Generic error handling, just print the returned HTML paged for debug ...
+		return &NetmagisError{string(body)}
+	}
 }
