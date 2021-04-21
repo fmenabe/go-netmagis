@@ -10,6 +10,7 @@ import (
 	//"net/http"
 	//"net/http/cookiejar"
 	"regexp"
+	"strconv"
 	"strings"
 	//"time"
 	"github.com/antchfx/htmlquery"
@@ -27,6 +28,34 @@ var (
 	)
 */
 )
+ /*
+ * Utils
+ */
+func try(mapInstance map[string]interface{}, key string, defaultValue interface{}) interface{} {
+	value, found := mapInstance[key]
+	if found {
+		return value
+	}
+	return defaultValue
+}
+
+// `host` can be a FQDN or an IP.
+func checkFqdn(host string) bool {
+	return fqdnRegexp.Match([]byte(host))
+}
+
+func checkIp(host string) bool {
+	return net.ParseIP(host) != nil
+}
+
+func nodeText(node *html.Node) string {
+	return strings.TrimSpace(htmlquery.InnerText(node))
+}
+
+func splitFqdn(fqdn string) (string, string) {
+	res := strings.SplitN(fqdn, ".", 2)
+	return res[0], res[1]
+}
 
 /*
  * Client
@@ -113,27 +142,6 @@ func NewClient(url string, username string, password string) (*NetmagisClient, e
 	return client, nil
 }
 
-// `host` can be a FQDN or an IP.
-func checkFqdn(host string) bool {
-	return fqdnRegexp.Match([]byte(host))
-}
-
-func checkIp(host string) bool {
-	return net.ParseIP(host) != nil
-}
-
-func getNodeText(node *html.Node) string {
-	return strings.TrimSpace(htmlquery.InnerText(node))
-}
-
-func getMapValue(mapInstance map[string]interface{}, key string, defaultValue interface{}) interface{} {
-	value, found := mapInstance[key]
-	if found {
-		return value
-	}
-	return defaultValue
-}
-
 func (c *NetmagisClient) JoinUrl(paths ...string) string {
 	url := c.BaseUrl
 	for _, path := range paths {
@@ -167,41 +175,39 @@ func (c *NetmagisClient) GetHost(host string) (map[string]interface{}, error) {
 		return nil, &NetmagisError{"unable to parse HTML"}
 	}
 	nodes := htmlquery.Find(doc, "//td[@class='tab-text10']")
-	hostParams := map[string]interface{}{
-		"name": getNodeText(nodes[1]),
-		"ip":   getNodeText(nodes[3]),
-		"mac":  getNodeText(nodes[5]),
-		"dhcp": func() string {
-			profile := getNodeText(nodes[7])
-			if profile == "No profile" {
-				return ""
-			} else {
-				return profile
-			}
-		}(),
-		"type": getNodeText(nodes[9]),
-		"smtp": func() bool {
-			if getNodeText(nodes[11]) == "Yes" {
-				return true
-			} else {
-				return false
-			}
-		}(),
-		"comment": getNodeText(nodes[13]),
-		"owner": map[string]string{
-			"name": getNodeText(nodes[15]),
-			"mail": getNodeText(nodes[17]),
-		},
-	}
 
-	if len(nodes) == 20 {
-		hostParams["aliases"] = []string{}
-		hostParams["groups"] = strings.Split(getNodeText(nodes[19]), " ")
-	} else if len(nodes) == 22 {
-		hostParams["aliases"] = strings.Split(getNodeText(nodes[19]), " ")
-		hostParams["groups"] = strings.Split(getNodeText(nodes[21]), " ")
-	} else {
-		return nil, &NetmagisError{"unexpected number of fields"}
+	hostParams := map[string]interface{}{}
+	field := ""
+	for idx, node := range nodes {
+		if idx%2 == 0 {
+			field = nodeText(node)
+			field = strings.ReplaceAll(field, "(", "")
+			field = strings.ReplaceAll(field, ")", "")
+			field = strings.ReplaceAll(field, " ", "_")
+			field = strings.ToLower(field)
+		} else {
+			value := nodeText(node)
+
+			if field == "smtp_emit_right" {
+				hostParams[field] = map[string]bool{"Yes": true, "No": false, "": false}[value]
+			} else if field == "dhcp_profile" {
+				profile := ""
+				if value != "No profile" {
+					profile = value
+				}
+				hostParams[field] = profile
+			} else if field == "ttl" {
+				hostParams[field] = func() int { v, _ := strconv.Atoi(value); return v }()
+			} else if field == "aliases" {
+				hostParams[field] = strings.Split(value, ",")
+			} else if field == "allowed_groups" {
+				hostParams[field] = strings.Split(value, ",")
+			} else {
+				hostParams[field] = value
+			}
+
+			field = ""
+		}
 	}
 
 	if host != hostParams["name"] {
