@@ -81,21 +81,25 @@ func FromConfig(filepath string) (*NetmagisClient, error) {
 	fileContent, err := ioutil.ReadFile(filepath)
 	if err != nil {
 		return nil, &NetmagisError{
-			fmt.Sprintf(
-				"unable to load YAML file: %s",
-				err.Error(),
-			),
+			fmt.Sprintf("FromConfig: unable to load YAML file: %s", err.Error()),
 		}
 	}
 
 	err = yaml.Unmarshal(fileContent, &config)
 	if err != nil {
 		return nil, &NetmagisError{
-			fmt.Sprintf(
-				"unable to parse YAML content: %s",
-				err.Error(),
-			),
+			fmt.Sprintf("FromConfig: unable to parse YAML content: %s", err.Error()),
 		}
+	}
+
+	if config.Netmagis.Url == "" {
+		return nil, &NetmagisError{"FromConfig: URL not defined"}
+	}
+	if config.Netmagis.Username == "" {
+		return nil, &NetmagisError{"FromConfig: username not defined"}
+	}
+	if config.Netmagis.Password == "" {
+		return nil, &NetmagisError{"FromConfig: password not defined"}
 	}
 
 	return NewClient(
@@ -119,10 +123,7 @@ func NewClient(url string, username string, password string) (*NetmagisClient, e
 	res, err := httpClient.GetRedirect(fmt.Sprintf("%s/start", url))
 	if err != nil {
 		return nil, &NetmagisError{
-			fmt.Sprintf(
-				"unable to retrieve CAS URL: %s",
-				err.Error(),
-			),
+			fmt.Sprintf("NewClient: unable to retrieve CAS URL: %s", err.Error()),
 		}
 	}
 	casLoginUrl := res.Header["Location"][0]
@@ -131,7 +132,9 @@ func NewClient(url string, username string, password string) (*NetmagisClient, e
 	cas := CasClient{LoginUrl: casLoginUrl, HttpClient: httpClient}
 	err = cas.Connect(username, password)
 	if err != nil {
-		return nil, err
+		return nil, &NetmagisError{
+			fmt.Sprintf("NewClient: CAS error: %s", err.Error()),
+		}
 	}
 
 	// Return client
@@ -152,7 +155,7 @@ func (c *NetmagisClient) JoinUrl(paths ...string) string {
 
 func (c *NetmagisClient) GetHost(host string) (map[string]interface{}, error) {
 	if !checkIp(host) && !checkFqdn(host) {
-		return nil, &NetmagisError{"host is not a FQDN or and IP address"}
+		return nil, &NetmagisError{"GetHost: host is not a FQDN or and IP address"}
 	}
 
 	formData := url.Values{"q": {host}}
@@ -172,7 +175,9 @@ func (c *NetmagisClient) GetHost(host string) (map[string]interface{}, error) {
 
 	doc, err := htmlquery.Parse(strings.NewReader(string(body)))
 	if err != nil {
-		return nil, &NetmagisError{"unable to parse HTML"}
+		return nil, &NetmagisError{
+			fmt.Sprintf("GetHost: unable to parse HTML response: %s", err.Error()),
+		}
 	}
 	nodes := htmlquery.Find(doc, "//td[@class='tab-text10']")
 
