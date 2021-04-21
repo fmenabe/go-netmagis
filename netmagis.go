@@ -278,7 +278,37 @@ func (c *NetmagisClient) AddHost(fqdn string, ip string, params map[string]inter
 	}
 }
 
-func (c *NetmagisClient) AddAlias(alias string, host string, view string) error {
+func (c *NetmagisClient) AddAlias(cname string, data string) error {
+	cnameName, cnameDomain := splitFqdn(cname)
+	dataName, dataDomain := splitFqdn(data)
+	formData := url.Values{
+		"action":    {"add-alias"},
+		"name":      {cnameName},
+		"domain":    {cnameDomain},
+		"nameref":   {dataName},
+		"domainref": {dataDomain},
+		"idview":    {"1"},
+	}
+
+	res, err := c.HttpClient.PostForm(c.JoinUrl("/add"), formData)
+	if err != nil {
+		return &NetmagisError{fmt.Sprintf("AddAlias: HTTP request error: %s", err.Error())}
+	}
+	body, _ := c.HttpClient.ReadBody(res)
+
+	if strings.Contains(string(body), "<h2>Error!</h2>") {
+		errorMsg := strings.Trim(string(errorRegexp.FindSubmatch(body)[1]), `"`)
+		return &NetmagisError{fmt.Sprintf("AddAlias: %s", errorMsg)}
+	}
+
+	if strings.Contains(string(body), "The alias has been added") {
+		return nil
+	} else {
+		// For unknown error, just return the HTML page for debugging
+		return &NetmagisError{
+			fmt.Sprintf("AddAlias: unknown error (raw HTML response): %s", string(body)),
+		}
+	}
 	return nil
 }
 
