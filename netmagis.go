@@ -16,6 +16,8 @@ import (
 var (
 	fqdnRegexp         = regexp.MustCompile(`^[0-9a-zA-Z-]{2,63}(\.[a-zA-Z-]{2,63})+\.[a-zA-Z]{2,63}$`)
 	hostNotFoundRegexp = regexp.MustCompile(`String '[^']*' not found`)
+	errorRegexp        = regexp.MustCompile(`<blockquote><FONT COLOR="#FF0000">(.*)</FONT></blockquote>`)
+)
 
 /*
  * Utils
@@ -212,12 +214,27 @@ func (c *NetmagisClient) GetHost(host string) (map[string]interface{}, error) {
 }
 
 func (c *NetmagisClient) AddHost(fqdn string, ip string, params map[string]interface{}) error {
-	name, domain := func() (string, string) {
-		res := strings.SplitN(fqdn, ".", 2)
-		return res[0], res[1]
-	}()
-	fmt.Println(name, domain)
+	// Check of host already exists
+	host, err := c.GetHost(fqdn)
+	if err != nil {
+		return &NetmagisError{fmt.Sprintf("AddHost: unable to retrieve host: %s", err.Error())}
+	}
+	if host != nil {
+		if host["is_alias"].(bool) {
+			return &NetmagisError{
+				fmt.Sprintf("AddHost: host '%s' already exists and is an alias", fqdn),
+			}
+		}
+		if try(params, "multiple", false) == false && params["ip_address"] != ip {
+			return &NetmagisError{
+				fmt.Sprintf("AddHost: host '%s' already declared", fqdn) +
+					", use `multiple` parameter to allow round-robin DNS",
+			}
+		}
+	}
 
+	// Format and send request
+	name, domain := splitFqdn(fqdn)
 	formData := url.Values{
 		"action":     {"add-host"},
 		"idview":     {"1"},
@@ -225,16 +242,16 @@ func (c *NetmagisClient) AddHost(fqdn string, ip string, params map[string]inter
 		"name":       {name},
 		"domain":     {domain},
 		"naddr":      {"1"},
-		"confirm":    {"no"},
-		"ttl":        {string(getMapValue(params, "ttl", 60).(int))},
-		"mac":        {getMapValue(params, "mac", "").(string)},
-		"iddhcpprof": {string(getMapValue(params, "dhcp", 0).(int))},
-		"hinfo":      {getMapValue(params, "type", "PC/Unix").(string)},
-		"comment":    {getMapValue(params, "comment", "").(string)},
-		"respname":   {getMapValue(params, "owner_name", "").(string)},
-		"respmail":   {getMapValue(params, "owner_mail", "").(string)},
+		"confirm":    {"yes"},
+		"ttl":        {strconv.Itoa(try(params, "ttl", 60).(int))},
+		"mac":        {try(params, "mac", "").(string)},
+		"iddhcpprof": {strconv.Itoa(try(params, "dhcp", 0).(int))},
+		"hinfo":      {try(params, "type", "PC/Unix").(string)},
+		"comment":    {try(params, "comment", "").(string)},
+		"respname":   {try(params, "owner_name", "").(string)},
+		"respmail":   {try(params, "owner_mail", "").(string)},
 		"sendsmtp": {func() string {
-			if getMapValue(params, "smtp", false).(bool) {
+			if try(params, "smtp", false).(bool) {
 				return "1"
 			}
 			return "0"
@@ -242,19 +259,23 @@ func (c *NetmagisClient) AddHost(fqdn string, ip string, params map[string]inter
 	}
 	res, err := c.HttpClient.PostForm(c.JoinUrl("/add"), formData)
 	if err != nil {
-		return err
+		return &NetmagisError{fmt.Sprintf("AddHost: HTTP request error: %s", err.Error())}
 	}
 	body, _ := c.HttpClient.ReadBody(res)
-	fmt.Println(string(body))
 
-	/*
-		res, err := c.HttpClient.Get(fmt.Sprintf("%s/admindex", c.BaseURL))
-		if err != nil {
-			return err
+	if strings.Contains(string(body), "<h2>Error!</h2>") {
+		errorMsg := strings.Trim(string(errorRegexp.FindSubmatch(body)[1]), `"`)
+		return &NetmagisError{fmt.Sprintf("AddHost: %s", errorMsg)}
+	}
+
+	if strings.Contains(string(body), "Host has been added.") {
+		return nil
+	} else {
+		// For unknown error, just return the HTML page for debugging
+		return &NetmagisError{
+			fmt.Sprintf("AddHost: unknown error (raw HTML response): %s", string(body)),
 		}
-		//body, _ := c.HttpClient.ReadBody(res)
-	*/
-	return nil
+	}
 }
 
 func (c *NetmagisClient) AddAlias(alias string, host string, view string) error {
