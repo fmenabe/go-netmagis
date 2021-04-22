@@ -244,14 +244,14 @@ func (c *NetmagisClient) AddHost(fqdn string, ip string, params map[string]inter
 		"naddr":      {"1"},
 		"confirm":    {"yes"},
 		"ttl":        {strconv.Itoa(try(params, "ttl", 60).(int))},
-		"mac":        {try(params, "mac", "").(string)},
-		"iddhcpprof": {strconv.Itoa(try(params, "dhcp", 0).(int))},
-		"hinfo":      {try(params, "type", "PC/Unix").(string)},
+		"mac":        {try(params, "mac_address", "").(string)},
+		"iddhcpprof": {strconv.Itoa(try(params, "iddhcpprof", 0).(int))},
+		"hinfo":      {try(params, "hinfo", "PC/Unix").(string)},
 		"comment":    {try(params, "comment", "").(string)},
-		"respname":   {try(params, "owner_name", "").(string)},
-		"respmail":   {try(params, "owner_mail", "").(string)},
+		"respname":   {try(params, "responsible_name", "").(string)},
+		"respmail":   {try(params, "responsible_mail", "").(string)},
 		"sendsmtp": {func() string {
-			if try(params, "smtp", false).(bool) {
+			if try(params, "smtp_emit_right", false).(bool) {
 				return "1"
 			}
 			return "0"
