@@ -193,9 +193,9 @@ func (c *NetmagisClient) GetHost(host string) (map[string]interface{}, error) {
 			} else if field == "ttl" {
 				hostParams[field] = func() int { v, _ := strconv.Atoi(value); return v }()
 			} else if field == "aliases" {
-				hostParams[field] = strings.Split(value, ",")
+				hostParams[field] = strings.Split(value, " ")
 			} else if field == "allowed_groups" {
-				hostParams[field] = strings.Split(value, ",")
+				hostParams[field] = strings.Split(value, " ")
 			} else {
 				hostParams[field] = value
 			}
