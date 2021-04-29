@@ -14,9 +14,10 @@ import (
 )
 
 var (
-	fqdnRegexp         = regexp.MustCompile(`^[0-9a-zA-Z-]{2,63}(\.[a-zA-Z-]{2,63})+\.[a-zA-Z]{2,63}$`)
-	hostNotFoundRegexp = regexp.MustCompile(`String '[^']*' not found`)
-	errorRegexp        = regexp.MustCompile(`<blockquote><FONT COLOR="#FF0000">(.*)</FONT></blockquote>`)
+	fqdnRegexp           = regexp.MustCompile(`^[0-9a-zA-Z-]{2,63}(\.[a-zA-Z-]{2,63})+\.[a-zA-Z]{2,63}$`)
+	errorRegexp          = regexp.MustCompile(`<blockquote><FONT COLOR="#FF0000">(.*)</FONT></blockquote>`)
+	hostNotFoundRegexp   = regexp.MustCompile(`String '[^']*' not found`)
+	searchRegexpValidate = regexp.MustCompile(`is a.* in view `)
 )
 
 /*
@@ -142,27 +143,47 @@ func (c *NetmagisClient) JoinUrl(paths ...string) string {
 	return url
 }
 
+func (c *NetmagisClient) Call(uri string, formData url.Values, validateFunc func(body string) bool) (string, error) {
+	res, err := c.HttpClient.PostForm(c.JoinUrl(uri), formData)
+	if err != nil {
+		return "", &NetmagisError{fmt.Sprintf("ClientError: %s", err.Error())}
+		//return &NetmagisError{fmt.Sprintf("%s: HTTP request error: %s", name, err.Error())}
+	}
+	body, _ := c.HttpClient.ReadBody(res)
+	bodyString := string(body)
+
+	if strings.Contains(bodyString, "<h2>Error!</h2>") {
+		errorMsg := strings.Trim(string(errorRegexp.FindSubmatch(body)[1]), `"`)
+		return "", &NetmagisError{fmt.Sprintf("NetmagisError: %s", errorMsg)}
+	}
+
+	if !validateFunc(bodyString) {
+		return "", &NetmagisError{
+			fmt.Sprintf(
+				"ValidationError: unexpected output (raw HTML answer for debug): %s", body,
+			),
+		}
+	}
+	return bodyString, nil
+}
+
 func (c *NetmagisClient) GetHost(host string) (map[string]interface{}, error) {
 	if !checkIp(host) && !checkFqdn(host) {
 		return nil, &NetmagisError{"GetHost: host is not a FQDN or and IP address"}
 	}
 
-	formData := url.Values{"q": {host}}
-	res, err := c.HttpClient.PostForm(c.JoinUrl("/search"), formData)
+	checkFunc := func(body string) bool {
+		return searchRegexpValidate.MatchString(body) || hostNotFoundRegexp.MatchString(body)
+	}
+	body, err := c.Call("/search", url.Values{"q": {host}}, checkFunc)
 	if err != nil {
 		return nil, err
 	}
-
-	body, err := c.HttpClient.ReadBody(res)
-	if err != nil {
-		return nil, err
-	}
-
-	if hostNotFoundRegexp.Match(body) {
+	if hostNotFoundRegexp.MatchString(body) {
 		return nil, nil
 	}
 
-	doc, err := htmlquery.Parse(strings.NewReader(string(body)))
+	doc, err := htmlquery.Parse(strings.NewReader(body))
 	if err != nil {
 		return nil, &NetmagisError{
 			fmt.Sprintf("GetHost: unable to parse HTML response: %s", err.Error()),
@@ -214,6 +235,8 @@ func (c *NetmagisClient) GetHost(host string) (map[string]interface{}, error) {
 }
 
 func (c *NetmagisClient) AddHost(fqdn string, ip string, params map[string]interface{}) error {
+	name, domain := splitFqdn(fqdn)
+
 	// Check of host already exists
 	host, err := c.GetHost(fqdn)
 	if err != nil {
@@ -234,7 +257,6 @@ func (c *NetmagisClient) AddHost(fqdn string, ip string, params map[string]inter
 	}
 
 	// Format and send request
-	name, domain := splitFqdn(fqdn)
 	formData := url.Values{
 		"action":     {"add-host"},
 		"idview":     {"1"},
@@ -257,30 +279,21 @@ func (c *NetmagisClient) AddHost(fqdn string, ip string, params map[string]inter
 			return "0"
 		}()},
 	}
-	res, err := c.HttpClient.PostForm(c.JoinUrl("/add"), formData)
-	if err != nil {
-		return &NetmagisError{fmt.Sprintf("AddHost: HTTP request error: %s", err.Error())}
-	}
-	body, _ := c.HttpClient.ReadBody(res)
 
-	if strings.Contains(string(body), "<h2>Error!</h2>") {
-		errorMsg := strings.Trim(string(errorRegexp.FindSubmatch(body)[1]), `"`)
-		return &NetmagisError{fmt.Sprintf("AddHost: %s", errorMsg)}
+	checkFunc := func(body string) bool {
+		return strings.Contains(body, "Host has been added.")
 	}
 
-	if strings.Contains(string(body), "Host has been added.") {
-		return nil
-	} else {
-		// For unknown error, just return the HTML page for debugging
-		return &NetmagisError{
-			fmt.Sprintf("AddHost: unknown error (raw HTML response): %s", string(body)),
-		}
+	if _, err := c.Call("/add", formData, checkFunc); err != nil {
+		return err
 	}
+	return nil
 }
 
 func (c *NetmagisClient) AddAlias(cname string, data string) error {
 	cnameName, cnameDomain := splitFqdn(cname)
 	dataName, dataDomain := splitFqdn(data)
+
 	formData := url.Values{
 		"action":    {"add-alias"},
 		"name":      {cnameName},
@@ -289,25 +302,12 @@ func (c *NetmagisClient) AddAlias(cname string, data string) error {
 		"domainref": {dataDomain},
 		"idview":    {"1"},
 	}
-
-	res, err := c.HttpClient.PostForm(c.JoinUrl("/add"), formData)
-	if err != nil {
-		return &NetmagisError{fmt.Sprintf("AddAlias: HTTP request error: %s", err.Error())}
-	}
-	body, _ := c.HttpClient.ReadBody(res)
-
-	if strings.Contains(string(body), "<h2>Error!</h2>") {
-		errorMsg := strings.Trim(string(errorRegexp.FindSubmatch(body)[1]), `"`)
-		return &NetmagisError{fmt.Sprintf("AddAlias: %s", errorMsg)}
+	checkFunc := func(body string) bool {
+		return strings.Contains(body, "The alias has been added")
 	}
 
-	if strings.Contains(string(body), "The alias has been added") {
-		return nil
-	} else {
-		// For unknown error, just return the HTML page for debugging
-		return &NetmagisError{
-			fmt.Sprintf("AddAlias: unknown error (raw HTML response): %s", string(body)),
-		}
+	if _, err := c.Call("/del", formData, checkFunc); err != nil {
+		return err
 	}
 	return nil
 }
@@ -319,21 +319,12 @@ func (c *NetmagisClient) DelHost(fqdn string) error {
 		"name":    {name},
 		"domain":  {domain},
 	}
-	res, err := c.HttpClient.PostForm(c.JoinUrl("/del"), formData)
-	if err != nil {
+	checkFunc := func(body string) bool {
+		return strings.Contains(body, "has been removed")
+	}
+
+	if _, err := c.Call("/del", formData, checkFunc); err != nil {
 		return err
 	}
-	body, _ := c.HttpClient.ReadBody(res)
-
-	if strings.Contains(string(body), "<h2>Error!</h2>") {
-		errorMsg := strings.Trim(string(errorRegexp.FindSubmatch(body)[1]), `"`)
-		return &NetmagisError{errorMsg}
-	}
-
-	if strings.Contains(string(body), "has been removed") {
-		return nil
-	} else {
-		// Generic error handling, just print the returned HTML paged for debug ...
-		return &NetmagisError{string(body)}
-	}
+	return nil
 }
