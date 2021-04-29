@@ -40,13 +40,13 @@ func checkIp(host string) bool {
 	return net.ParseIP(host) != nil
 }
 
-func nodeText(node *html.Node) string {
-	return strings.TrimSpace(htmlquery.InnerText(node))
-}
-
 func splitFqdn(fqdn string) (string, string) {
 	res := strings.SplitN(fqdn, ".", 2)
 	return res[0], res[1]
+}
+
+func nodeText(node *html.Node) string {
+	return strings.TrimSpace(htmlquery.InnerText(node))
 }
 
 /*
@@ -167,10 +167,15 @@ func (c *NetmagisClient) Call(uri string, formData url.Values, validateFunc func
 	return bodyString, nil
 }
 
-func (c *NetmagisClient) GetHost(host string) (map[string]interface{}, error) {
+func (c *NetmagisClient) Search(host string) (map[string]interface{}, error) {
+	// Check input host
 	if !checkIp(host) && !checkFqdn(host) {
-		return nil, &NetmagisError{"GetHost: host is not a FQDN or and IP address"}
+		return nil, &NetmagisError{
+			fmt.Sprintf("host '%s' is not a FQDN or and IP address", host),
+		}
 	}
+
+	// Search host and parse HTML response
 
 	checkFunc := func(body string) bool {
 		return searchRegexpValidate.MatchString(body) || hostNotFoundRegexp.MatchString(body)
@@ -186,12 +191,16 @@ func (c *NetmagisClient) GetHost(host string) (map[string]interface{}, error) {
 	doc, err := htmlquery.Parse(strings.NewReader(body))
 	if err != nil {
 		return nil, &NetmagisError{
-			fmt.Sprintf("GetHost: unable to parse HTML response: %s", err.Error()),
+			fmt.Sprintf("unable to parse /search HTML response: %s", err.Error()),
 		}
 	}
-	nodes := htmlquery.Find(doc, "//td[@class='tab-text10']")
 
+	// Parse all <td> in the page to generating output. The HTML table contains two
+	// columns: field and value. The returned keys are mapped to be coherent with
+	// other API calls (but some fields like aliases and groups are not used by
+	// other calls).
 	hostParams := map[string]interface{}{}
+	nodes := htmlquery.Find(doc, "//td[@class='tab-text10']")
 	field := ""
 	for idx, node := range nodes {
 		if idx%2 == 0 {
@@ -203,33 +212,29 @@ func (c *NetmagisClient) GetHost(host string) (map[string]interface{}, error) {
 		} else {
 			value := nodeText(node)
 
-			if field == "smtp_emit_right" {
+			switch field {
+			case "smtp_emit_right":
 				hostParams[field] = map[string]bool{"Yes": true, "No": false, "": false}[value]
-			} else if field == "dhcp_profile" {
+			case "dhcp_profile":
 				profile := ""
 				if value != "No profile" {
 					profile = value
 				}
 				hostParams[field] = profile
-			} else if field == "ttl" {
+			case "ttl":
 				hostParams[field] = func() int { v, _ := strconv.Atoi(value); return v }()
-			} else if field == "aliases" {
+			case "aliases", "allowed_groups":
 				hostParams[field] = strings.Split(value, " ")
-			} else if field == "allowed_groups" {
 				hostParams[field] = strings.Split(value, " ")
-			} else {
+			default:
 				hostParams[field] = value
 			}
 
 			field = ""
 		}
 	}
-
-	if host != hostParams["name"] {
-		hostParams["is_alias"] = true
-	} else {
-		hostParams["is_alias"] = false
-	}
+	// Computed field indicating if the entry is an alias
+	hostParams["is_alias"] = host != hostParams["name"]
 
 	return hostParams, nil
 }
@@ -238,7 +243,7 @@ func (c *NetmagisClient) AddHost(fqdn string, ip string, params map[string]inter
 	name, domain := splitFqdn(fqdn)
 
 	// Check of host already exists
-	host, err := c.GetHost(fqdn)
+	host, err := c.Search(fqdn)
 	if err != nil {
 		return &NetmagisError{fmt.Sprintf("AddHost: unable to retrieve host: %s", err.Error())}
 	}
