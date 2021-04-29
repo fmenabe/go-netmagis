@@ -317,12 +317,10 @@ func (c *NetmagisClient) GetHost(fqdn string) (map[string]interface{}, error) {
 		for _, o := range htmlquery.Find(node, "//option") {
 			value := htmlquery.SelectAttr(o, "value")
 			// Check if the selected attr is set
-			if len(o.Attr) == 2 {
-				if o.Attr[1].Key == "selected" {
-					hostParams[selectName] = value
-					found = true
-					break
-				}
+			if len(o.Attr) == 2 && o.Attr[1].Key == "selected" {
+				hostParams[selectName] = value
+				found = true
+				break
 			}
 		}
 
@@ -418,6 +416,23 @@ func (c *NetmagisClient) UpdateHost(fqdn string, idrr string, params map[string]
 	return nil
 }
 
+func (c *NetmagisClient) DelHost(fqdn string) error {
+	name, domain := splitFqdn(fqdn)
+	formData := url.Values{
+		"idviews": {"1"},
+		"name":    {name},
+		"domain":  {domain},
+	}
+	checkFunc := func(body string) bool {
+		return strings.Contains(body, "has been removed")
+	}
+
+	if _, err := c.Call("/del", formData, checkFunc); err != nil {
+		return err
+	}
+	return nil
+}
+
 func (c *NetmagisClient) AddAlias(cname string, data string) error {
 	cnameName, cnameDomain := splitFqdn(cname)
 	dataName, dataDomain := splitFqdn(data)
@@ -432,23 +447,6 @@ func (c *NetmagisClient) AddAlias(cname string, data string) error {
 	}
 	checkFunc := func(body string) bool {
 		return strings.Contains(body, "The alias has been added")
-	}
-
-	if _, err := c.Call("/del", formData, checkFunc); err != nil {
-		return err
-	}
-	return nil
-}
-
-func (c *NetmagisClient) DelHost(fqdn string) error {
-	name, domain := splitFqdn(fqdn)
-	formData := url.Values{
-		"idviews": {"1"},
-		"name":    {name},
-		"domain":  {domain},
-	}
-	checkFunc := func(body string) bool {
-		return strings.Contains(body, "has been removed")
 	}
 
 	if _, err := c.Call("/del", formData, checkFunc); err != nil {
