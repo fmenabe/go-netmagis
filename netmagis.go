@@ -239,6 +239,77 @@ func (c *NetmagisClient) Search(host string) (map[string]interface{}, error) {
 	return hostParams, nil
 }
 
+// Parse /mod form to retrieve informations about a host.
+func (c *NetmagisClient) GetHost(fqdn string) (map[string]interface{}, error) {
+	name, domain := splitFqdn(fqdn)
+
+	// Get host modification form
+	body, err := c.Call(
+		"/mod",
+		url.Values{
+			"action": {"edit"},
+			"name":   {name},
+			"domain": {domain},
+		},
+		func(body string) bool { return true },
+	)
+	if err != nil {
+		// Bypass the error returned by Netmagis for returning nil when the host
+		// does not exists.
+		hostNotFoundRegexp := regexp.MustCompile(`Name '[^']*' does not exist`)
+		if hostNotFoundRegexp.MatchString(err.Error()) {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	// Parse HTML response
+	doc, err := htmlquery.Parse(strings.NewReader(body))
+	if err != nil {
+		errMsg := fmt.Sprintf("unable to parse /mod HTML response: %s", err.Error())
+		return nil, &NetmagisError{errMsg}
+	}
+
+	// Parse form inputs
+	hostParams := map[string]interface{}{}
+	for _, node := range htmlquery.Find(doc, "//input") {
+		inputName := htmlquery.SelectAttr(node, "name")
+		inputValue := htmlquery.SelectAttr(node, "value")
+		ignoreFields := map[string]bool{
+			"":        true,
+			"action":  true,
+			"confirm": true,
+		}
+		if !ignoreFields[inputName] {
+			hostParams[inputName] = string(inputValue)
+		}
+	}
+
+	// Parse form selects
+	for _, node := range htmlquery.Find(doc, "//select") {
+		selectName := htmlquery.SelectAttr(node, "name")
+		found := false
+		// Parse options
+		for _, o := range htmlquery.Find(node, "//option") {
+			value := htmlquery.SelectAttr(o, "value")
+			// Check if the selected attr is set
+			if len(o.Attr) == 2 {
+				if o.Attr[1].Key == "selected" {
+					hostParams[selectName] = value
+					found = true
+					break
+				}
+			}
+		}
+
+		if selectName == "iddhcpprof" && !found {
+			hostParams[selectName] = "0"
+		}
+	}
+
+	return hostParams, nil
+}
+
 func (c *NetmagisClient) AddHost(fqdn string, ip string, params map[string]interface{}) error {
 	name, domain := splitFqdn(fqdn)
 
