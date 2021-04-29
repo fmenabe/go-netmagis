@@ -49,6 +49,23 @@ func nodeText(node *html.Node) string {
 	return strings.TrimSpace(htmlquery.InnerText(node))
 }
 
+func convertInt(value interface{}) string {
+	if v, ok := value.(int); ok {
+		return strconv.Itoa(v)
+	}
+	return value.(string)
+}
+
+func convertBool(value interface{}) string {
+	if v, ok := value.(bool); ok {
+		if v {
+			return "1"
+		}
+		return "0"
+	}
+	return value.(string)
+}
+
 /*
  * Client
  */
@@ -313,21 +330,18 @@ func (c *NetmagisClient) GetHost(fqdn string) (map[string]interface{}, error) {
 func (c *NetmagisClient) AddHost(fqdn string, ip string, params map[string]interface{}) error {
 	name, domain := splitFqdn(fqdn)
 
-	// Check of host already exists
-	host, err := c.Search(fqdn)
+	// Check if host already exists
+	host, err := c.GetHost(fqdn)
 	if err != nil {
-		return &NetmagisError{fmt.Sprintf("AddHost: unable to retrieve host: %s", err.Error())}
+		return &NetmagisError{fmt.Sprintf("unable to retrieve host: %s", err.Error())}
 	}
 	if host != nil {
-		if host["is_alias"].(bool) {
+		if !try(params, "multiple", false).(bool) {
 			return &NetmagisError{
-				fmt.Sprintf("AddHost: host '%s' already exists and is an alias", fqdn),
-			}
-		}
-		if try(params, "multiple", false) == false && params["ip_address"] != ip {
-			return &NetmagisError{
-				fmt.Sprintf("AddHost: host '%s' already declared", fqdn) +
-					", use `multiple` parameter to allow round-robin DNS",
+				fmt.Sprintf(
+					"host '%s' already declared, use `multiple` parameter to allow round-robin DNS",
+					fqdn,
+				),
 			}
 		}
 	}
@@ -341,19 +355,14 @@ func (c *NetmagisClient) AddHost(fqdn string, ip string, params map[string]inter
 		"domain":     {domain},
 		"naddr":      {"1"},
 		"confirm":    {"yes"},
-		"ttl":        {strconv.Itoa(try(params, "ttl", 60).(int))},
-		"mac":        {try(params, "mac_address", "").(string)},
-		"iddhcpprof": {strconv.Itoa(try(params, "iddhcpprof", 0).(int))},
+		"ttl":        {convertInt(try(params, "ttl", ""))},
+		"mac":        {try(params, "mac", "").(string)},
+		"iddhcpprof": {convertInt(try(params, "iddhcpprof", 0))},
 		"hinfo":      {try(params, "hinfo", "PC/Unix").(string)},
 		"comment":    {try(params, "comment", "").(string)},
-		"respname":   {try(params, "responsible_name", "").(string)},
-		"respmail":   {try(params, "responsible_mail", "").(string)},
-		"sendsmtp": {func() string {
-			if try(params, "smtp_emit_right", false).(bool) {
-				return "1"
-			}
-			return "0"
-		}()},
+		"respname":   {try(params, "respname", "").(string)},
+		"respmail":   {try(params, "respmail", "").(string)},
+		"sendsmtp":   {convertBool(try(params, "sendsmtp", false))},
 	}
 
 	checkFunc := func(body string) bool {
