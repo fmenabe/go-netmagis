@@ -375,6 +375,36 @@ func (c *NetmagisClient) AddHost(fqdn string, ip string, params map[string]inter
 	return nil
 }
 
+func (c *NetmagisClient) UpdateHost(fqdn string, idrr string, params map[string]interface{}) error {
+	name, domain := splitFqdn(fqdn)
+
+	formData := url.Values{
+		"action":     {"store"},
+		"confirm":    {"yes"},
+		"idrr":       {idrr},
+		"idview":     {"1"},
+		"name":       {name},
+		"domain":     {domain},
+		"ttl":        {convertInt(try(params, "ttl", ""))},
+		"mac":        {try(params, "mac", "").(string)},
+		"iddhcpprof": {convertInt(try(params, "iddhcpprof", 0))},
+		"hinfo":      {try(params, "hinfo", "PC/Unix").(string)},
+		"comment":    {try(params, "comment", "").(string)},
+		"respname":   {try(params, "respname", "").(string)},
+		"respmail":   {try(params, "respmail", "").(string)},
+		"sendsmtp":   {convertBool(try(params, "sendsmtp", false))},
+	}
+
+	checkFunc := func(body string) bool {
+		return strings.Contains(body, "The modification has been stored in database")
+	}
+
+	if _, err := c.Call("/mod", formData, checkFunc); err != nil {
+		return err
+	}
+	return nil
+}
+
 func (c *NetmagisClient) AddAlias(cname string, data string) error {
 	cnameName, cnameDomain := splitFqdn(cname)
 	dataName, dataDomain := splitFqdn(data)
