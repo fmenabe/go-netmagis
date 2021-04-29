@@ -298,6 +298,13 @@ func (c *NetmagisClient) GetHost(fqdn string) (map[string]interface{}, error) {
 			"confirm": true,
 		}
 		if !ignoreFields[inputName] {
+			if inputName == "sendsmtp" {
+				if len(node.Attr) == 4 && node.Attr[3].Key == "checked" {
+					inputValue = "1"
+				} else {
+					inputValue = "0"
+				}
+			}
 			hostParams[inputName] = string(inputValue)
 		}
 	}
@@ -364,6 +371,9 @@ func (c *NetmagisClient) AddHost(fqdn string, ip string, params map[string]inter
 		"respmail":   {try(params, "respmail", "").(string)},
 		"sendsmtp":   {convertBool(try(params, "sendsmtp", false))},
 	}
+	if formData["sendsmtp"][0] == "0" {
+		delete(formData, "sendsmtp")
+	}
 
 	checkFunc := func(body string) bool {
 		return strings.Contains(body, "Host has been added.")
@@ -393,6 +403,9 @@ func (c *NetmagisClient) UpdateHost(fqdn string, idrr string, params map[string]
 		"respname":   {try(params, "respname", "").(string)},
 		"respmail":   {try(params, "respmail", "").(string)},
 		"sendsmtp":   {convertBool(try(params, "sendsmtp", false))},
+	}
+	if formData["sendsmtp"][0] == "0" {
+		delete(formData, "sendsmtp")
 	}
 
 	checkFunc := func(body string) bool {
