@@ -293,7 +293,7 @@ func (c *NetmagisClient) GetHost(fqdn string) (map[string]interface{}, error) {
 		inputName := htmlquery.SelectAttr(node, "name")
 		inputValue := htmlquery.SelectAttr(node, "value")
 		switch inputName {
-		case "idrr", "ttl", "iddhcpprof", "idview":
+		case "idrr", "ttl", "idview":
 			v, err := strconv.Atoi(inputValue)
 			if err != nil {
 				return nil, &NetmagisError{
@@ -324,7 +324,7 @@ func (c *NetmagisClient) GetHost(fqdn string) (map[string]interface{}, error) {
 		}
 
 		if selectName == "iddhcpprof" && !found {
-			hostParams[selectName] = "0"
+			hostParams[selectName] = 0
 		}
 	}
 
