@@ -292,19 +292,18 @@ func (c *NetmagisClient) GetHost(fqdn string) (map[string]interface{}, error) {
 	for _, node := range htmlquery.Find(doc, "//input") {
 		inputName := htmlquery.SelectAttr(node, "name")
 		inputValue := htmlquery.SelectAttr(node, "value")
-		ignoreFields := map[string]bool{
-			"":        true,
-			"action":  true,
-			"confirm": true,
-		}
-		if !ignoreFields[inputName] {
-			if inputName == "sendsmtp" {
-				if len(node.Attr) == 4 && node.Attr[3].Key == "checked" {
-					inputValue = "1"
-				} else {
-					inputValue = "0"
+		switch inputName {
+		case "idrr", "ttl", "iddhcpprof", "idview":
+			v, err := strconv.Atoi(inputValue)
+			if err != nil {
+				return nil, &NetmagisError{
+					fmt.Sprintf("unable to convert field '%s' to int: %s", inputName, err.Error()),
 				}
 			}
+			hostParams[inputName] = v
+		case "sendsmtp":
+			hostParams[inputName] = string(inputValue) == "1"
+		case "name", "mac", "hinfo", "comment", "respname", "respmail":
 			hostParams[inputName] = string(inputValue)
 		}
 	}
