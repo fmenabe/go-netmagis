@@ -518,7 +518,7 @@ func (c *NetmagisClient) AddAlias(cname string, data string) error {
 		return strings.Contains(body, "The alias has been added")
 	}
 
-	if _, err := c.Call("/del", formData, checkFunc); err != nil {
+	if _, err := c.Call("/add", formData, checkFunc); err != nil {
 		return err
 	}
 	return nil
