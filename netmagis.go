@@ -49,14 +49,39 @@ func nodeText(node *html.Node) string {
 	return strings.TrimSpace(htmlquery.InnerText(node))
 }
 
-func convertInt(value interface{}) string {
+func intToStr(value interface{}) string {
 	if v, ok := value.(int); ok {
+		// Reset value
+		if v == -1 {
+			return ""
+		}
 		return strconv.Itoa(v)
+	}
+	// Reset value
+	if value == "-1" {
+		value = ""
 	}
 	return value.(string)
 }
 
-func convertBool(value interface{}) string {
+func strToInt(value interface{}) (int, error) {
+	if v, ok := value.(string); ok {
+		// Reset value
+		if v == "" {
+			return -1, nil
+		}
+
+		i, err := strconv.Atoi(v)
+		if err != nil {
+			return -999, &NetmagisError{fmt.Sprintf("conversion error: %s", err.Error())}
+		}
+
+		return i, nil
+	}
+	return value.(int), nil
+}
+
+func boolToStr(value interface{}) string {
 	if v, ok := value.(bool); ok {
 		if v {
 			return "1"
@@ -64,6 +89,16 @@ func convertBool(value interface{}) string {
 		return "0"
 	}
 	return value.(string)
+}
+
+func strToBool(value interface{}) bool {
+	if v, ok := value.(string); ok {
+		if v == "1" {
+			return true
+		}
+		return false
+	}
+	return value.(bool)
 }
 
 /*
@@ -294,7 +329,7 @@ func (c *NetmagisClient) GetHost(fqdn string) (map[string]interface{}, error) {
 		inputValue := htmlquery.SelectAttr(node, "value")
 		switch inputName {
 		case "idrr", "ttl", "idview":
-			v, err := strconv.Atoi(inputValue)
+			v, err := strToInt(inputValue)
 			if err != nil {
 				return nil, &NetmagisError{
 					fmt.Sprintf("unable to convert field '%s' to int: %s", inputName, err.Error()),
@@ -359,14 +394,14 @@ func (c *NetmagisClient) AddHost(fqdn string, ip string, params map[string]inter
 		"domain":     {domain},
 		"naddr":      {"1"},
 		"confirm":    {"yes"},
-		"ttl":        {convertInt(try(params, "ttl", ""))},
+		"ttl":        {intToStr(try(params, "ttl", -1))},
 		"mac":        {try(params, "mac", "").(string)},
-		"iddhcpprof": {convertInt(try(params, "iddhcpprof", 0))},
+		"iddhcpprof": {intToStr(try(params, "iddhcpprof", 0))},
 		"hinfo":      {try(params, "hinfo", "PC/Unix").(string)},
 		"comment":    {try(params, "comment", "").(string)},
 		"respname":   {try(params, "respname", "").(string)},
 		"respmail":   {try(params, "respmail", "").(string)},
-		"sendsmtp":   {convertBool(try(params, "sendsmtp", false))},
+		"sendsmtp":   {boolToStr(try(params, "sendsmtp", false))},
 	}
 	if formData["sendsmtp"][0] == "0" {
 		delete(formData, "sendsmtp")
@@ -382,24 +417,24 @@ func (c *NetmagisClient) AddHost(fqdn string, ip string, params map[string]inter
 	return nil
 }
 
-func (c *NetmagisClient) UpdateHost(fqdn string, idrr string, params map[string]interface{}) error {
+func (c *NetmagisClient) UpdateHost(fqdn string, idrr int, params map[string]interface{}) error {
 	name, domain := splitFqdn(fqdn)
 
 	formData := url.Values{
 		"action":     {"store"},
 		"confirm":    {"yes"},
-		"idrr":       {idrr},
+		"idrr":       {strconv.Itoa(idrr)},
 		"idview":     {"1"},
 		"name":       {name},
 		"domain":     {domain},
-		"ttl":        {convertInt(try(params, "ttl", ""))},
+		"ttl":        {intToStr(try(params, "ttl", ""))},
 		"mac":        {try(params, "mac", "").(string)},
-		"iddhcpprof": {convertInt(try(params, "iddhcpprof", 0))},
+		"iddhcpprof": {intToStr(try(params, "iddhcpprof", 0))},
 		"hinfo":      {try(params, "hinfo", "PC/Unix").(string)},
 		"comment":    {try(params, "comment", "").(string)},
 		"respname":   {try(params, "respname", "").(string)},
 		"respmail":   {try(params, "respmail", "").(string)},
-		"sendsmtp":   {convertBool(try(params, "sendsmtp", false))},
+		"sendsmtp":   {boolToStr(try(params, "sendsmtp", false))},
 	}
 	if formData["sendsmtp"][0] == "0" {
 		delete(formData, "sendsmtp")
