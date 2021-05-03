@@ -219,6 +219,36 @@ func (c *NetmagisClient) Call(uri string, formData url.Values, validateFunc func
 	return bodyString, nil
 }
 
+func (c *NetmagisClient) UserInfo() (map[string]string, error) {
+	body, err := c.Call("/profile", url.Values{}, func(body string) bool { return true })
+	if err != nil {
+		return nil, err
+	}
+
+	doc, err := htmlquery.Parse(strings.NewReader(body))
+	if err != nil {
+		return nil, &NetmagisError{
+			fmt.Sprintf("unable to parse /profile HTML response: %s", err.Error()),
+		}
+	}
+
+	user := map[string]string{}
+	nodes := htmlquery.Find(doc, "//td[@id='texte-page']")
+	nodes = htmlquery.Find(nodes[0], "//table")
+	nodes = htmlquery.Find(nodes[1], "//td")
+	field := ""
+	for idx, node := range nodes {
+		if idx%2 == 0 {
+			field = nodeText(node)
+			field = strings.ToLower(field)
+		} else {
+			user[field] = nodeText(node)
+		}
+	}
+
+	return user, nil
+}
+
 func (c *NetmagisClient) Search(host string) (map[string]interface{}, error) {
 	// Check input host
 	if !checkIp(host) && !checkFqdn(host) {
