@@ -337,7 +337,12 @@ func (c *NetmagisClient) GetHost(fqdn string) (map[string]interface{}, error) {
 			}
 			hostParams[inputName] = v
 		case "sendsmtp":
-			hostParams[inputName] = string(inputValue) == "1"
+			if len(node.Attr) == 4 && node.Attr[3].Key == "checked" {
+				inputValue = "1"
+			} else {
+				inputValue = "0"
+			}
+			hostParams[inputName] = inputValue == "1"
 		case "name", "mac", "hinfo", "comment", "respname", "respmail":
 			hostParams[inputName] = string(inputValue)
 		}
